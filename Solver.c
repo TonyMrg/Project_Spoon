@@ -21,7 +21,7 @@ void buildM(double* arr) {
     int j = -1;
     for (int i = 0;i < n * nom;i++) {
         int index = i * n * nom;
-        if (i % 2 == 0) {
+        if (i % n == 0) {
             j++;
         }
         arr[index + i] = masses_array[j].m;
@@ -34,13 +34,16 @@ void buildJ(double* arr) {
         if (i == 0) {
             arr[index] = 2 * masses_array[i].x;
             arr[index + 1] = 2 * masses_array[i].y;
+            arr[index + 2] = 2 * masses_array[i].z;
         }
         else {
             arr[i * nom * n + index] = -2 * (masses_array[i].x - masses_array[i - 1].x);
             arr[i * nom * n + index + 1] = -2 * (masses_array[i].y - masses_array[i - 1].y);
-            arr[i * nom * n + index + 2] = 2 * (masses_array[i].x - masses_array[i - 1].x);
-            arr[i * nom * n + index + 3] = 2 * (masses_array[i].y - masses_array[i - 1].y);
-            index += 2;
+            arr[i * nom * n + index + 2] = -2 * (masses_array[i].z - masses_array[i - 1].z);
+            arr[i * nom * n + index + 3] = 2 * (masses_array[i].x - masses_array[i - 1].x);
+            arr[i * nom * n + index + 4] = 2 * (masses_array[i].y - masses_array[i - 1].y);
+            arr[i * nom * n + index + 5] = 2 * (masses_array[i].z - masses_array[i - 1].z);
+            index += n;
         }
 
     }
@@ -79,16 +82,18 @@ void combine_matrixA(double* A, double* M, double* J, double *JT) {
 
 void buildB(double* ret) {
 
-    for (int i = 1;i < nom * n;i += 2) {
+    for (int i = 1;i < nom * n;i += n) {
         ret[i] = -m * g;
     }
 
     for (int i = nom * n, j = 0;i < nom * n + n_phi;i++, j++) {
         if (i == nom * n) {
-            ret[i] = -2 * (pow(masses_array[0].dx, 2) + pow(masses_array[0].dy, 2));
+            ret[i] = -2 * (pow(masses_array[0].dx, 2) + pow(masses_array[0].dy, 2) + pow(masses_array[0].dz, 2));
         }
         else {
-            ret[i] = -2 * (pow(masses_array[j].dx - masses_array[j - 1].dx, 2) + pow(masses_array[j].dy - masses_array[j - 1].dy, 2));
+            ret[i] = -2 * (pow(masses_array[j].dx - masses_array[j - 1].dx, 2) + 
+                           pow(masses_array[j].dy - masses_array[j - 1].dy, 2) + 
+                           pow(masses_array[j].dz - masses_array[j - 1].dz, 2));
         }
     }
 }
@@ -139,58 +144,73 @@ double* rk4(int steps, double dt, double* ddr_temp1, double* ddr_temp2, double* 
 
         solve(ddr_temp1, M, J, A, B, JT);                                                             //solve
         for (int j = 0;j < nom;j++) {
-            int index = j * 4;
+            int index = j * 2*n;
             kinetic += 0.5 * (pow(masses_array[j].dx, 2) + pow(masses_array[j].dy, 2));
             potential += g * masses_array[j].y;
-            temp[index] = masses_array[j].dx;
+            temp[index    ] = masses_array[j].dx;
             temp[index + 1] = masses_array[j].dy;
-            temp[index + 2] = masses_array[j].x;
-            temp[index + 3] = masses_array[j].y;
-            results[step * nom * 2 + 2 * j] = masses_array[j].x;                                      // Integrate...
-            results[step * nom * 2 + 2 * j + 1] = masses_array[j].y;
-            masses_array[j].ddx = ddr_temp1[2 * j];
-            masses_array[j].ddy = ddr_temp1[2 * j + 1];
+            temp[index + 2] = masses_array[j].dz;
+            temp[index + 3] = masses_array[j].x;
+            temp[index + 4] = masses_array[j].y;
+            temp[index + 5] = masses_array[j].z;
+            results[step * nom * n + n * j] = masses_array[j].x;                                      // Integrate...
+            results[step * nom * n + n * j + 1] = masses_array[j].y;
+            results[step * nom * n + n * j + 2] = masses_array[j].z;
+            masses_array[j].ddx = ddr_temp1[n * j];
+            masses_array[j].ddy = ddr_temp1[n * j + 1];
+            masses_array[j].ddz = ddr_temp1[n * j + 2];
             masses_array[j].dx = masses_array[j].dx + masses_array[j].ddx * (dt / 2);
             masses_array[j].dy = masses_array[j].dy + masses_array[j].ddy * (dt / 2);
+            masses_array[j].dz = masses_array[j].dz + masses_array[j].ddz * (dt / 2);
             masses_array[j].x = masses_array[j].x + masses_array[j].dx * (dt / 2);
             masses_array[j].y = masses_array[j].y + masses_array[j].dy * (dt / 2);
+            masses_array[j].z = masses_array[j].z + masses_array[j].dz * (dt / 2);
         }
 
         solve(ddr_temp2, M, J, A, B, JT);
         for (int j = 0;j < nom;j++) {
-            int index = j * 4;
-            masses_array[j].ddx = ddr_temp2[2 * j];
-            masses_array[j].ddy = ddr_temp2[2 * j+1];
+            int index = j *2*n;
+            masses_array[j].ddx = ddr_temp2[n * j];
+            masses_array[j].ddy = ddr_temp2[n * j + 1];
+            masses_array[j].ddz = ddr_temp2[n * j + 2];
             masses_array[j].dx = temp[index] + masses_array[j].ddx * (dt / 2);
             masses_array[j].dy = temp[index + 1] + masses_array[j].ddy * (dt / 2);
-            masses_array[j].x = temp[index + 2] + masses_array[j].dx * (dt / 2);
-            masses_array[j].y = temp[index + 3] + masses_array[j].dy * (dt / 2);
+            masses_array[j].dz = temp[index + 2] + masses_array[j].ddz * (dt / 2);
+            masses_array[j].x = temp[index + 3] + masses_array[j].dx * (dt / 2);
+            masses_array[j].y = temp[index + 4] + masses_array[j].dy * (dt / 2);
+            masses_array[j].z = temp[index + 5] + masses_array[j].dz * (dt / 2);
         }
 
         solve(ddr_temp3, M, J, A, B, JT);
         for (int j = 0;j < nom;j++) {
-            int index = j * 4;
-            masses_array[j].ddx = ddr_temp3[2 * j];;
-            masses_array[j].ddy = ddr_temp3[2 * j+1];;
-            masses_array[j].dx = temp[index] + masses_array[j].ddx * dt;
-            masses_array[j].dy = temp[index + 1] + masses_array[j].ddy * dt;
-            masses_array[j].x = temp[index + 2] + masses_array[j].dx * dt;
-            masses_array[j].y = temp[index + 3] + masses_array[j].dy * dt;
+            int index = j * 2*n;
+            masses_array[j].ddx = ddr_temp3[n * j];;
+            masses_array[j].ddy = ddr_temp3[n * j + 1];
+            masses_array[j].ddz = ddr_temp3[n * j + 2];
+            masses_array[j].dx  = temp[index] + masses_array[j].ddx * dt;
+            masses_array[j].dy  = temp[index + 1] + masses_array[j].ddy * dt;
+            masses_array[j].dz  = temp[index + 2] + masses_array[j].ddz * dt;
+            masses_array[j].x   = temp[index + 3] + masses_array[j].dx * dt;
+            masses_array[j].y   = temp[index + 4] + masses_array[j].dy * dt;
+            masses_array[j].z   = temp[index + 5] + masses_array[j].dz * dt;
         }
 
 
         solve(ddr_temp4, M, J, A, B, JT);
         for (int j = 0;j < nom;j++) {
-            int index = j * 4;
-            masses_array[j].ddx = (ddr_temp1[2 * j] + 2 * ddr_temp2[2 * j] + 2 * masses_array[j].ddx + ddr_temp4[2 * j]) / 6;
-            masses_array[j].ddy = (ddr_temp1[2 * j+1] + 2 * ddr_temp2[2 * j + 1] + 2 * masses_array[j].ddy + ddr_temp3[2 * j + 1]) / 6;
-            masses_array[j].dx = temp[index] + masses_array[j].ddx * dt;
-            masses_array[j].dy = temp[index + 1] + masses_array[j].ddy * dt;
-            masses_array[j].x = temp[index + 2] + masses_array[j].dx * dt;
-            masses_array[j].y = temp[index + 3] + masses_array[j].dy * dt;
+            int index = j * 2*n;
+            masses_array[j].ddx = (ddr_temp1[n * j] + 2 * ddr_temp2[n * j] + 2 * masses_array[j].ddx + ddr_temp4[n * j]) / 6;
+            masses_array[j].ddy = (ddr_temp1[n * j + 1] + 2 * ddr_temp2[n * j + 1] + 2 * masses_array[j].ddy + ddr_temp4[n * j + 1]) / 6;
+            masses_array[j].ddz = (ddr_temp1[n * j + 2] + 2 * ddr_temp2[n * j + 2] + 2 * masses_array[j].ddz + ddr_temp4[n * j + 2]) / 6;
+            masses_array[j].dx  = temp[index    ] + masses_array[j].ddx * dt;
+            masses_array[j].dy  = temp[index + 1] + masses_array[j].ddy * dt;
+            masses_array[j].dz  = temp[index + 2] + masses_array[j].ddz * dt;
+            masses_array[j].x   = temp[index + 3] + masses_array[j].dx * dt;
+            masses_array[j].y   = temp[index + 4] + masses_array[j].dy * dt;
+            masses_array[j].z   = temp[index + 5] + masses_array[j].dz * dt;
         }
 
-       /* if (step % (steps/250) == 0) {
+        /*if (step % (steps/250) == 0) {
             energy[energy_index] = kinetic + potential;
             energy_index++;
         }*/
