@@ -232,6 +232,28 @@ double* buildB(void) {
     return ret;
 }
 
+void solve(gsl_vector *x) {
+    double* J = buildJ();
+    double* M = buildM();
+    double* A = combine_matrixA(M, J);
+    double* B = buildB();
+
+    gsl_matrix_view A_view = gsl_matrix_view_array(A, n * nom + n_phi, n * nom + n_phi);
+    gsl_vector_view B_view = gsl_vector_view_array(B, n * nom + n_phi);
+    
+    int signum;
+    gsl_permutation* p = gsl_permutation_alloc((n * nom + n_phi));
+    gsl_linalg_LU_decomp(&A_view.matrix, p, &signum);
+    gsl_linalg_LU_solve(&A_view.matrix, p, &B_view.vector, x);
+    free(J);
+    free(M);
+    free(A);
+    free(B);
+    gsl_permutation_free(p);
+
+    return 0;
+}
+
 void save_energy(double* energy, int n) {
     FILE* f = fopen("C://Users//kosta//Downloads//energy.csv", "w");
     if (!f) return;
@@ -258,8 +280,6 @@ int main(void) {
         lala.dy = 0;
         masses_array[i] = lala;
     }
-    
-    int failed_sum = 0;
     int steps = 10000;
     double* results = malloc(steps * nom * 2 * sizeof(double));
     double* energy = malloc(250*sizeof(double));
@@ -273,96 +293,87 @@ int main(void) {
     }
     int energy_index = 0;
     for (int step = 0; step < steps; ++step) {
-        double* J = buildJ();
-        double* M = buildM();
-        double* A = combine_matrixA(M, J);
-        double* B = buildB();
-
-        gsl_matrix_view A_view = gsl_matrix_view_array(A, n * nom + n_phi, n * nom + n_phi);
-        gsl_vector_view B_view = gsl_vector_view_array(B, n * nom + n_phi);
-        gsl_vector* ddr = gsl_vector_alloc(n * nom + n_phi);
-        int signum;
-        gsl_permutation* p = gsl_permutation_alloc((n * nom + n_phi));
-        gsl_linalg_LU_decomp(&A_view.matrix, p, &signum);
-        gsl_linalg_LU_solve(&A_view.matrix, p, &B_view.vector, ddr);
-        
-        for (int k = 0; k < n * nom + n_phi; ++k) {
-            double val = gsl_vector_get(ddr, k);
-            if (!isfinite(val)) {
-                failed_sum += 1;
-                //fprintf(stderr, "NaN or Inf detected in ddr[%d]        %d!\n", k,step);            
-            }
-        }
-        double* temp = malloc(4 *nom* sizeof(double));
+        double kinetic = 0;
+        double potential = 0;
+        double* temp = malloc(4 * nom * sizeof(double));
         if (!temp) {
             fprintf(stderr, "Error: malloc failed for temp array\n");
             return 1;
         }
-
-        double kinetic=0;
-        double potential=0;
+        
+          
+        gsl_vector* ddr_temp1 = gsl_vector_alloc(n * nom + n_phi);
+        solve(ddr_temp1);
         for (int j = 0;j < nom;j++) {
             int index = j * 4;
             kinetic += 0.5 * (pow(masses_array[j].dx, 2)+pow(masses_array[j].dy,2));
             potential += g * masses_array[j].y;
-            results[step * nom * 2 + 2*j] = masses_array[j].x;
-            results[step * nom * 2 + 2*j + 1] = masses_array[j].y;
-            masses_array[j].ddx = gsl_vector_get(ddr, 2*j);
-            masses_array[j].ddy = gsl_vector_get(ddr, 2*j + 1);
             temp[index] = masses_array[j].dx;
             temp[index + 1] = masses_array[j].dy;
             temp[index + 2] = masses_array[j].x;
             temp[index + 3] = masses_array[j].y;
-            masses_array[j].dx = masses_array[j].dx + masses_array[j].ddx * 0.001;
-            masses_array[j].dy = masses_array[j].dy + masses_array[j].ddy * 0.001;
-            masses_array[j].x = masses_array[j].x + masses_array[j].dx * 0.001;
-            masses_array[j].y = masses_array[j].y + masses_array[j].dy * 0.001;
+            results[step * nom * 2 + 2*j] = masses_array[j].x;
+            results[step * nom * 2 + 2*j + 1] = masses_array[j].y;
+            masses_array[j].ddx = gsl_vector_get(ddr_temp1, 2*j);
+            masses_array[j].ddy = gsl_vector_get(ddr_temp1, 2*j + 1);
+            masses_array[j].dx = masses_array[j].dx + masses_array[j].ddx * 0.0005;
+            masses_array[j].dy = masses_array[j].dy + masses_array[j].ddy * 0.0005;
+            masses_array[j].x = masses_array[j].x + masses_array[j].dx * 0.0005;
+            masses_array[j].y = masses_array[j].y + masses_array[j].dy * 0.0005;
         }
-        
-        double* J_temp = buildJ();
-        double* M_temp= buildM();
-        double* A_temp = combine_matrixA(M_temp, J_temp);
-        double* B_temp = buildB();
-        gsl_matrix_view A_temp_view1 = gsl_matrix_view_array(A_temp, n * nom + n_phi, n * nom + n_phi);
-        gsl_vector_view B_temp_view1 = gsl_vector_view_array(B_temp, n * nom + n_phi);
-        gsl_vector* ddr_temp = gsl_vector_alloc(n * nom + n_phi);
-        int signum_temp;
-        gsl_permutation* p_temp = gsl_permutation_alloc((n * nom + n_phi));
-        gsl_linalg_LU_decomp(&A_temp_view1.matrix, p_temp, &signum_temp);
-        gsl_linalg_LU_solve(&A_temp_view1.matrix, p_temp, &B_temp_view1.vector, ddr_temp);
 
+        gsl_vector* ddr_temp2 = gsl_vector_alloc(n * nom + n_phi);
+        solve(ddr_temp2);
         for (int j = 0;j < nom;j++) {
             int index = j * 4;
-            masses_array[j].ddx = (gsl_vector_get(ddr_temp, 2 * j) + masses_array[j].ddx)/2;
-            masses_array[j].ddy = (gsl_vector_get(ddr_temp, 2 * j + 1)+ masses_array[j].ddy)/2;
-            masses_array[j].dx = temp[index] + masses_array[j].ddx * 0.001;
-            masses_array[j].dy = temp[index+1] + masses_array[j].ddy * 0.001;
-            masses_array[j].x = temp[index+2] + masses_array[j].dx * 0.001;
-            masses_array[j].y = temp[index+3] + masses_array[j].dy * 0.001;
+            masses_array[j].ddx = (gsl_vector_get(ddr_temp2, 2 * j));
+            masses_array[j].ddy = (gsl_vector_get(ddr_temp2, 2 * j + 1));
+            masses_array[j].dx = temp[index] + masses_array[j].ddx * 0.0005;
+            masses_array[j].dy = temp[index+1] + masses_array[j].ddy * 0.0005;
+            masses_array[j].x = temp[index+2] + masses_array[j].dx * 0.0005;
+            masses_array[j].y = temp[index+3] + masses_array[j].dy * 0.0005;
         }
+
+        gsl_vector* ddr_temp3 = gsl_vector_alloc(n * nom + n_phi);
+        solve(ddr_temp3);
+        for (int j = 0;j < nom;j++) {
+            int index = j * 4;
+            masses_array[j].ddx = (gsl_vector_get(ddr_temp3, 2 * j));
+            masses_array[j].ddy = (gsl_vector_get(ddr_temp3, 2 * j + 1));
+            masses_array[j].dx = temp[index] + masses_array[j].ddx * 0.001;
+            masses_array[j].dy = temp[index + 1] + masses_array[j].ddy * 0.001;
+            masses_array[j].x = temp[index + 2] + masses_array[j].dx * 0.001;
+            masses_array[j].y = temp[index + 3] + masses_array[j].dy * 0.001;
+        }
+
+        gsl_vector* ddr_temp4 = gsl_vector_alloc(n * nom + n_phi);
+        solve(ddr_temp4);
+        for (int j = 0;j < nom;j++) {
+            int index = j * 4;
+            masses_array[j].ddx = (gsl_vector_get(ddr_temp1, 2 * j) + 2* gsl_vector_get(ddr_temp2, 2 * j)+ 2 * masses_array[j].ddx + gsl_vector_get(ddr_temp4, 2 * j) ) / 6;
+            masses_array[j].ddy = (gsl_vector_get(ddr_temp1, 2 * j + 1) + 2 * gsl_vector_get(ddr_temp2, 2 * j + 1) + 2 * masses_array[j].ddy + gsl_vector_get(ddr_temp3, 2 * j + 1)) / 6;
+            masses_array[j].dx = temp[index] + masses_array[j].ddx * 0.001;
+            masses_array[j].dy = temp[index + 1] + masses_array[j].ddy * 0.001;
+            masses_array[j].x = temp[index + 2] + masses_array[j].dx * 0.001;
+            masses_array[j].y = temp[index + 3] + masses_array[j].dy * 0.001;
+        }
+        
+        
+        
+        free(temp);
+        gsl_vector_free(ddr_temp1);
+        gsl_vector_free(ddr_temp2);
+        gsl_vector_free(ddr_temp3);
+        gsl_vector_free(ddr_temp4);
+
 
         if (step % 40 == 0) {
             energy[energy_index] = kinetic + potential;
             energy_index++;
-
         }
-        free(temp);
-        free(J_temp);
-        free(M_temp);
-        free(A_temp);
-        free(B_temp);
-        gsl_vector_free(ddr_temp);
-        gsl_permutation_free(p_temp);
-        free(J);
-        free(M);
-        free(A);
-        free(B);
-        gsl_vector_free(ddr);
-        gsl_permutation_free(p);
     }
 
     save_energy(energy, 250);
-    printf("NaN or Inf: %d", failed_sum);
     visualize_double_pendulum(results, steps, 1,nom);
     return 0;
 }
