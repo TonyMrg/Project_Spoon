@@ -1,8 +1,10 @@
 #include "global_parameters.h"
 
 void row_to_col_major(double* src, double* dst, int rows, int cols) {
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
+    int i, j;
+#pragma omp parallel for collapse(2) private(i, j)
+    for (i = 0; i < rows; ++i) {
+        for (j = 0; j < cols; ++j) {
             dst[j * rows + i] = src[i * cols + j];
         }
     }

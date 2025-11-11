@@ -1,16 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <gsl/gsl_linalg.h>
-#include <gsl/gsl_matrix.h>
-#include <gsl/gsl_vector.h>
 #include <SDL.h>
 #include <stdarg.h>
-#include <time.h>
 #include <string.h>
-
-//#include <openblas/cblas.h>
-
+#include <mkl.h>
+#include <time.h>
+#include <omp.h>
 
 
 #ifndef GLOBALS_H
@@ -20,7 +16,7 @@
 extern double g;
 extern int nom;
 extern double m;
-extern int n_phi;  //number of constraints
+extern int n_phi;
 extern int n;
 extern double l;
 extern struct mass* masses_array;
