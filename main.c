@@ -10,9 +10,9 @@
 
 // Simulation parameters
 const double g = 9.81;
-const int nom = 2;
+const int nom = 20;
 const double m = 1.0;
-const int n_phi = 2;  //number of constraints
+const int n_phi = 20;  //number of constraints
 const int n = 2;
 const double l = 1.0;
 
@@ -36,11 +36,10 @@ struct mass {
     double m;
 };
 
-void visualize_double_pendulum(const double* results, int steps, int dt_ms)
+void visualize_double_pendulum(const double* results, int steps, int dt_ms, int n_masses)
 {
-    // Larger window
-    const int WIDTH = 1200;
-    const int HEIGHT = 1000;
+    const int WIDTH = 1920;
+    const int HEIGHT = 1400;
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
@@ -48,7 +47,7 @@ void visualize_double_pendulum(const double* results, int steps, int dt_ms)
     }
 
     SDL_Window* window = SDL_CreateWindow(
-        "Double Pendulum Visualization",
+        "Pendulum Visualization",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
 
@@ -66,47 +65,50 @@ void visualize_double_pendulum(const double* results, int steps, int dt_ms)
         return;
     }
 
-    // scale factor (pixels per meter)
-    const double SCALE = 250.0;     // slightly larger to keep rods visible
+    const double SCALE = 50;    // pixels per meter
     const int CX = WIDTH / 2;
-    const int CY = HEIGHT / 4;      // pivot higher to fit long swings
+    const int CY = HEIGHT / 4;
 
     int running = 1;
     SDL_Event e;
+
+    // optional colors for masses (cycled if more than 6)
+    SDL_Color mass_colors[] = {
+        {255, 80, 80, 255}, {80, 160, 255, 255}, {80, 255, 120, 255},
+        {255, 200, 50, 255}, {180, 100, 255, 255}, {255, 100, 180, 255}
+    };
+    int n_colors = sizeof(mass_colors) / sizeof(SDL_Color);
 
     for (int step = 0; step < steps && running; ++step) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = 0;
         }
 
-        double x1 = results[step * 4 + 0];
-        double y1 = results[step * 4 + 1];
-        double x2 = results[step * 4 + 2];
-        double y2 = results[step * 4 + 3];
-
-        int px0 = CX;
-        int py0 = CY;
-        int px1 = CX + (int)(SCALE * x1);
-        int py1 = CY - (int)(SCALE * y1);
-        int px2 = CX + (int)(SCALE * x2);
-        int py2 = CY - (int)(SCALE * y2);
-
-        // Clear screen
         SDL_SetRenderDrawColor(renderer, 20, 20, 30, 255);
         SDL_RenderClear(renderer);
 
-        // Draw rods
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        SDL_RenderDrawLine(renderer, px0, py0, px1, py1);
-        SDL_RenderDrawLine(renderer, px1, py1, px2, py2);
+        // draw rods between consecutive masses
+        int prev_px = CX, prev_py = CY;
+        for (int i = 0; i < n_masses; ++i) {
+            double x = results[step * n_masses * 2 + 2 * i];
+            double y = results[step * n_masses * 2 + 2 * i + 1];
 
-        // Draw masses
-        SDL_Rect m1 = { px1 - 5, py1 - 5, 10, 10 };
-        SDL_Rect m2 = { px2 - 5, py2 - 5, 10, 10 };
-        SDL_SetRenderDrawColor(renderer, 255, 80, 80, 255);
-        SDL_RenderFillRect(renderer, &m1);
-        SDL_SetRenderDrawColor(renderer, 80, 160, 255, 255);
-        SDL_RenderFillRect(renderer, &m2);
+            int px = CX + (int)(SCALE * x);
+            int py = CY - (int)(SCALE * y); // flip y
+
+            // draw rod from previous mass (or pivot) to current mass
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderDrawLine(renderer, prev_px, prev_py, px, py);
+
+            // draw current mass
+            SDL_Rect mrect = { px - 5, py - 5, 10, 10 };
+            SDL_Color c = mass_colors[i % n_colors];
+            SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, c.a);
+            SDL_RenderFillRect(renderer, &mrect);
+
+            prev_px = px;
+            prev_py = py;
+        }
 
         SDL_RenderPresent(renderer);
         SDL_Delay(dt_ms);
@@ -147,23 +149,24 @@ double* buildM() {
 
 double* buildJ() {
 
-    double* arr = (double*)calloc(n_phi * n * nom, sizeof(double));
+    double* arr = (double*)calloc(n_phi * n * nom*2, sizeof(double));
     if (!arr) {
         fprintf(stderr, "Error: calloc failed in BuildJ\n");
         return NULL;
     }
-
+    int index = 0;
     for (int i = 0; i < n_phi;i++) {
-        int index = i*nom*n;
         if (i == 0) {
             arr[index] = 2 * masses_array[i].x;
             arr[index + 1] = 2 * masses_array[i].y;
         }
         else {
-            arr[index] = -2 * (masses_array[i].x - masses_array[i-1].x);
-            arr[index + 1] = -2 * (masses_array[i].y - masses_array[i - 1].y);
-            arr[index + 2] = 2 * (masses_array[i].x - masses_array[i - 1].x);
-            arr[index + 3] = 2 * (masses_array[i].y - masses_array[i - 1].y);
+            arr[i * nom * n + index] = -2 * (masses_array[i].x - masses_array[i - 1].x);
+            arr[i * nom * n + index + 1] = -2 * (masses_array[i].y - masses_array[i - 1].y);
+            arr[i * nom * n + index + 2] = 2 * (masses_array[i].x - masses_array[i - 1].x);
+            arr[i * nom * n + index + 3] = 2 * (masses_array[i].y - masses_array[i - 1].y);
+            index += 2;
+            
         }
         
     }
@@ -229,31 +232,15 @@ double* buildB(void) {
     return ret;
 }
 
-double* truncateResults(double* results, int steps, int nom, int* newLength) {
-    int total = steps * nom * 2;
-    double* truncated = malloc(total * sizeof(double));
-    if (!truncated) {
-        perror("malloc failed");
-        return NULL;
+void save_energy(double* energy, int n) {
+    FILE* f = fopen("C://Users//kosta//Downloads//energy.csv", "w");
+    if (!f) return;
+    for (int i = 0; i < n; i++) {
+        fprintf(f, "%d,%f\n", i, energy[i]);
     }
-
-    int j = 0; // index in truncated array
-
-    for (int i = 0; i < total; i++) {
-        double val = results[i];
-        if (val > 2.0 || val < -2.0) {
-            // If y-coordinate, remove also previous x
-            if (i % 2 == 1) {
-                if (j > 0) j--; // remove previous x
-            }
-            break; // stop copying
-        }
-        truncated[j++] = val;
-    }
-
-    *newLength = j; // return new length
-    return truncated;
+    fclose(f);
 }
+
 
 int main(void) {
     masses_array = malloc(nom * sizeof(struct mass));
@@ -262,7 +249,7 @@ int main(void) {
         return 1;
     }
 
-    for (int i = 0;i < 2;i++) {
+    for (int i = 0;i < nom;i++) {
         struct mass lala;
         lala.m = 1;
         lala.x = i + 1;
@@ -272,20 +259,19 @@ int main(void) {
         masses_array[i] = lala;
     }
     
-    double d1 = sqrt(masses_array[0].x * masses_array[0].x + masses_array[0].y * masses_array[0].y);
-    double d2 = sqrt((masses_array[1].x - masses_array[0].x) * (masses_array[1].x - masses_array[0].x) + (masses_array[1].y - masses_array[0].y) * (masses_array[1].y - masses_array[0].y));
-    if (fabs(d1 - l) > 1e-12 || fabs(d2 - l) > 1e-12) {
-        printf(stderr, "Constraint not satisfied at init!\n");
-    }
-    
-    
-    
-    int steps = 1000;
-    double* results = malloc(steps * nom * 2 * sizeof(double));;
+    int failed_sum = 0;
+    int steps = 10000;
+    double* results = malloc(steps * nom * 2 * sizeof(double));
+    double* energy = malloc(250*sizeof(double));
     if (!results) {
         fprintf(stderr, "Error: malloc failed in results array\n");
         return 1;
     }
+    if (!energy) {
+        fprintf(stderr, "Error: malloc failed in energy array\n");
+        return 1;
+    }
+    int energy_index = 0;
     for (int step = 0; step < steps; ++step) {
         double* J = buildJ();
         double* M = buildM();
@@ -299,36 +285,84 @@ int main(void) {
         gsl_permutation* p = gsl_permutation_alloc((n * nom + n_phi));
         gsl_linalg_LU_decomp(&A_view.matrix, p, &signum);
         gsl_linalg_LU_solve(&A_view.matrix, p, &B_view.vector, ddr);
+        
         for (int k = 0; k < n * nom + n_phi; ++k) {
             double val = gsl_vector_get(ddr, k);
             if (!isfinite(val)) {
-                fprintf(stderr, "NaN or Inf detected in q_ddot[%d]!\n", k);
-                return 1;
-            
+                failed_sum += 1;
+                //fprintf(stderr, "NaN or Inf detected in ddr[%d]        %d!\n", k,step);            
             }
         }
+        double* temp = malloc(4 *nom* sizeof(double));
+        if (!temp) {
+            fprintf(stderr, "Error: malloc failed for temp array\n");
+            return 1;
+        }
+
+        double kinetic=0;
+        double potential=0;
         for (int j = 0;j < nom;j++) {
+            int index = j * 4;
+            kinetic += 0.5 * (pow(masses_array[j].dx, 2)+pow(masses_array[j].dy,2));
+            potential += g * masses_array[j].y;
             results[step * nom * 2 + 2*j] = masses_array[j].x;
             results[step * nom * 2 + 2*j + 1] = masses_array[j].y;
             masses_array[j].ddx = gsl_vector_get(ddr, 2*j);
             masses_array[j].ddy = gsl_vector_get(ddr, 2*j + 1);
-            masses_array[j].dx = masses_array[j].dx + masses_array[j].ddx * 0.01;
-            masses_array[j].dy = masses_array[j].dy + masses_array[j].ddy * 0.01;
-            masses_array[j].x = masses_array[j].x + masses_array[j].dx * 0.01;
-            masses_array[j].y = masses_array[j].y + masses_array[j].dy * 0.01;
+            temp[index] = masses_array[j].dx;
+            temp[index + 1] = masses_array[j].dy;
+            temp[index + 2] = masses_array[j].x;
+            temp[index + 3] = masses_array[j].y;
+            masses_array[j].dx = masses_array[j].dx + masses_array[j].ddx * 0.001;
+            masses_array[j].dy = masses_array[j].dy + masses_array[j].ddy * 0.001;
+            masses_array[j].x = masses_array[j].x + masses_array[j].dx * 0.001;
+            masses_array[j].y = masses_array[j].y + masses_array[j].dy * 0.001;
+        }
+        
+        double* J_temp = buildJ();
+        double* M_temp= buildM();
+        double* A_temp = combine_matrixA(M_temp, J_temp);
+        double* B_temp = buildB();
+        gsl_matrix_view A_temp_view1 = gsl_matrix_view_array(A_temp, n * nom + n_phi, n * nom + n_phi);
+        gsl_vector_view B_temp_view1 = gsl_vector_view_array(B_temp, n * nom + n_phi);
+        gsl_vector* ddr_temp = gsl_vector_alloc(n * nom + n_phi);
+        int signum_temp;
+        gsl_permutation* p_temp = gsl_permutation_alloc((n * nom + n_phi));
+        gsl_linalg_LU_decomp(&A_temp_view1.matrix, p_temp, &signum_temp);
+        gsl_linalg_LU_solve(&A_temp_view1.matrix, p_temp, &B_temp_view1.vector, ddr_temp);
+
+        for (int j = 0;j < nom;j++) {
+            int index = j * 4;
+            masses_array[j].ddx = (gsl_vector_get(ddr_temp, 2 * j) + masses_array[j].ddx)/2;
+            masses_array[j].ddy = (gsl_vector_get(ddr_temp, 2 * j + 1)+ masses_array[j].ddy)/2;
+            masses_array[j].dx = temp[index] + masses_array[j].ddx * 0.001;
+            masses_array[j].dy = temp[index+1] + masses_array[j].ddy * 0.001;
+            masses_array[j].x = temp[index+2] + masses_array[j].dx * 0.001;
+            masses_array[j].y = temp[index+3] + masses_array[j].dy * 0.001;
+        }
+
+        if (step % 40 == 0) {
+            energy[energy_index] = kinetic + potential;
+            energy_index++;
 
         }
+        free(temp);
+        free(J_temp);
+        free(M_temp);
+        free(A_temp);
+        free(B_temp);
+        gsl_vector_free(ddr_temp);
+        gsl_permutation_free(p_temp);
         free(J);
         free(M);
         free(A);
         free(B);
         gsl_vector_free(ddr);
         gsl_permutation_free(p);
-        
     }
-    
-    
-    
-    visualize_double_pendulum(results, steps, 16);
+
+    save_energy(energy, 250);
+    printf("NaN or Inf: %d", failed_sum);
+    visualize_double_pendulum(results, steps, 1,nom);
     return 0;
 }
