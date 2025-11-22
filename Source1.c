@@ -26,8 +26,6 @@ void write_results_txt(double* results, int steps, double dt);
 double* read_results_txt(int* nom, int* steps, double* dt);
 void solve(double* x, double* M, double* J, double* A, double* B, double *JT);
 
-
-
 int main(void) {
     int n_dof = nom * n;
     int total = n_dof + n_phi;
