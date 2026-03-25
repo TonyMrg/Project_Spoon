@@ -25,16 +25,14 @@ extern double l;
 extern struct mass* masses_array;
 
 struct mass {
-    double x;
-    double y;
-    double z;
-    double dx;
-    double dy;
-    double dz;
-    double ddx;
-    double ddy;
-    double ddz;
+    double r[3];
+    double q[4];
+    double v[3];
+    double omega[3];
+    double a[3];
+	double alpha[3];
     double m;
+    double I_body[9];
 };
 
 #endif
